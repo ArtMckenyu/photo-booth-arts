@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f6f1e9">
+<title>My Free Photo Booth</title>
+<style>
+:root{--ink:#29251f;--muted:#716b62;--paper:#f6f1e9;--card:#fffdf9;--accent:#466b57}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:760px;margin:auto;padding:22px 16px 40px}
+h1{font-size:27px;margin:4px 0}p{color:var(--muted);line-height:1.45}
+.panel{background:var(--card);border:1px solid #e4ddd1;border-radius:18px;padding:16px;margin:16px 0;box-shadow:0 4px 18px #3322110a}
+video{width:100%;max-height:58vh;object-fit:cover;background:#171717;border-radius:14px;transform:scaleX(-1)}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+button{border:0;border-radius:12px;padding:13px 17px;font-weight:700;font-size:15px;background:var(--accent);color:white;cursor:pointer}
+button.secondary{background:#e9e2d7;color:var(--ink)}button:disabled{opacity:.45;cursor:not-allowed}
+#status{font-weight:700;color:var(--accent);min-height:26px;margin-top:10px}
+#count{font-size:62px;font-weight:800;text-align:center;min-height:75px}
+#preview{width:min(100%,260px);display:block;margin:12px auto;border:1px solid #ddd;background:white}
+input{padding:10px;border:1px solid #d6cdbf;border-radius:9px;font:inherit;width:100%}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 5px}
+.small{font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>My Photo Booth</h1>
+  <p>Free DIY booth · 3-photo countdown · 2 × 6 inch photo strip</p>
+  <section class="panel">
+    <label for="event">Event / business text (optional)</label>
+    <input id="event" maxlength="32" placeholder="e.g. Art's Birthday · 2026">
+    <div style="margin-top:14px">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="count"></div>
+      <div id="status">Tap “Start camera” and allow camera access.</div>
+    </div>
+    <div class="row">
+      <button id="camera">Start camera</button>
+      <button id="start" disabled>Start 3-photo session</button>
+      <button id="switch" class="secondary" disabled>Switch camera</button>
+    </div>
+  </section>
+  <section class="panel">
+    <strong>Your finished photo strip</strong>
+    <p class="small">After the third shot, your strip is created below. Download the PNG and transfer it to your Windows laptop to print.</p>
+    <canvas id="preview" width="600" height="1800"></canvas>
+    <div class="row">
+      <button id="download" disabled>Download photo strip</button>
+      <button id="again" class="secondary" disabled>Take another set</button>
+    </div>
+  </section>
+  <section class="panel small">
+    <strong>Printing note</strong>
+    <p>Print the downloaded PNG at 100% / actual size on 2 × 6 inch media, or place two strips on a 4 × 6 inch sheet using a layout editor. Select borderless only if your printer and paper support it. Inkjet results vary by paper and ink.</p>
+    <p><strong>Privacy:</strong> photos stay in this browser session unless you download or share them. This app does not upload photos to a server.</p>
+  </section>
+</main>
+<script>
+const video=document.querySelector('#video'), countEl=document.querySelector('#count'), statusEl=document.querySelector('#status');
+const cameraBtn=document.querySelector('#camera'), startBtn=document.querySelector('#start'), switchBtn=document.querySelector('#switch');
+const downloadBtn=document.querySelector('#download'), againBtn=document.querySelector('#again');
+const canvas=document.querySelector('#preview'), ctx=canvas.getContext('2d');
+let stream=null, facing='user', shots=[], busy=false;
+function setStatus(s){statusEl.textContent=s}
+async function startCamera(){
+  if(!navigator.mediaDevices?.getUserMedia){setStatus('Camera access requires Safari/Chrome on a secure HTTPS page.');return}
+  try{
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1920},height:{ideal:1080}},audio:false});
+    video.srcObject=stream; await video.play();
+    startBtn.disabled=false;switchBtn.disabled=false;setStatus('Camera ready. Frame your guests and tap Start 3-photo session.');
+  }catch(e){setStatus('Could not open camera. Allow camera permission in browser settings and try again.')}
+}
+function countdown(n){return new Promise(resolve=>{let x=n;countEl.textContent=x;const timer=setInterval(()=>{x--;if(x>0)countEl.textContent=x;else{clearInterval(timer);countEl.textContent='';resolve()}},1000)})}
+function snap(){
+  const w=video.videoWidth,h=video.videoHeight;
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const x=c.getContext('2d');
+  // Save the natural camera image (not mirrored); most rear-camera event use is preferred.
+  x.drawImage(video,0,0,w,h);return c;
+}
+async function session(){
+ if(busy||!stream)return;busy=true;shots=[];startBtn.disabled=true;downloadBtn.disabled=true;againBtn.disabled=true;
+ try{
+  for(let i=0;i<3;i++){
+   setStatus(`Photo ${i+1} of 3 — get ready!`);await countdown(3);
+   shots.push(snap());setStatus(`Captured ${i+1} of 3`);
+   await new Promise(r=>setTimeout(r,650));
+  }
+  compose();downloadBtn.disabled=false;againBtn.disabled=false;setStatus('Your photo strip is ready. Download it to print.'); 
+ }finally{busy=false;startBtn.disabled=false}
+}
+function coverImage(image, x,y,w,h){
+ const iw=image.width,ih=image.height,scale=Math.max(w/iw,h/ih),sw=w/scale,sh=h/scale;
+ const sx=(iw-sw)/2,sy=(ih-sh)/2;
+ ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.drawImage(image,sx,sy,sw,sh,x,y,w,h);ctx.restore();
+}
+function compose(){
+ const W=600,H=1800;canvas.width=W;canvas.height=H;
+ ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+ ctx.fillStyle='#29251f';ctx.textAlign='center';
+ ctx.font='bold 34px Arial';ctx.fillText('PHOTO BOOTH',W/2,65);
+ const top=105,gap=22,frameH=505,frameW=520,left=40;
+ shots.forEach((im,i)=>{const y=top+i*(frameH+gap);ctx.fillStyle='#f1eee8';ctx.fillRect(left-8,y-8,frameW+16,frameH+16);coverImage(im,left,y,frameW,frameH)});
+ const caption=(document.querySelector('#event').value||'A LITTLE MOMENT TO KEEP').trim().toUpperCase();
+ ctx.fillStyle='#29251f';ctx.font='bold 25px Arial';ctx.fillText(caption.slice(0,32),W/2,1740);
+ ctx.font='18px Arial';ctx.fillStyle='#716b62';ctx.fillText(new Date().toLocaleDateString(),W/2,1774);
+}
+cameraBtn.addEventListener('click',startCamera);
+startBtn.addEventListener('click',session);
+switchBtn.addEventListener('click',async()=>{facing=facing==='user'?'environment':'user';await startCamera()});
+downloadBtn.addEventListener('click',()=>{const a=document.createElement('a');a.download='photo-booth-strip.png';a.href=canvas.toDataURL('image/png');a.click()});
+againBtn.addEventListener('click',()=>{shots=[];ctx.clearRect(0,0,canvas.width,canvas.height);downloadBtn.disabled=true;againBtn.disabled=true;setStatus('Ready for the next group.')});
+</script>
+</body>
+</html>
